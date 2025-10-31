@@ -21,8 +21,6 @@ Compression results vary depending on content:
 | 📄 Scanned Image PDFs | 100 MB | 10–20 MB | ✅ 80–90% reduction |
 | 🧾 Mixed PDFs (text + images) | 100 MB | 60–80 MB | ⚙️ 20–40% reduction |
 | 🧠 Text-only PDFs | 100 MB | 90–95 MB | ⚠️ Minimal reduction (5–10%) |
-
-Use the **compression level** below to balance quality and file size.
 """)
 
 uploaded_file = st.file_uploader("Upload your PDF file", type=["pdf"])
@@ -50,20 +48,22 @@ if uploaded_file:
     input_pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
     output_pdf = fitz.open()
 
+    progress = st.progress(0)
+    total_pages = len(input_pdf)
+
     with st.spinner("🔄 Compressing PDF... Please wait..."):
-        for page_number in range(len(input_pdf)):
+        for page_number in range(total_pages):
             page = input_pdf.load_page(page_number)
             pix = page.get_pixmap(dpi=dpi)
-            img_stream = io.BytesIO()
-            pix.save(img_stream, "jpeg", quality=image_quality)
-            img_stream.seek(0)
+            img_bytes = pix.tobytes("jpeg", quality=image_quality)
             rect = fitz.Rect(0, 0, pix.width, pix.height)
             new_page = output_pdf.new_page(width=rect.width, height=rect.height)
-            new_page.insert_image(rect, stream=img_stream.getvalue())
+            new_page.insert_image(rect, stream=img_bytes)
+            progress.progress((page_number + 1) / total_pages)
 
         optimized_bytes = output_pdf.tobytes()
 
-    # Close the first handles immediately to avoid 'document closed' issue
+    # Close PDF handles safely
     input_pdf.close()
     output_pdf.close()
 
@@ -86,12 +86,10 @@ if uploaded_file:
         for i in range(num_preview_pages):
             col1, col2 = st.columns(2)
             with col1:
-                orig_page = original_doc.load_page(i)
-                orig_pix = orig_page.get_pixmap(dpi=100)
+                orig_pix = original_doc.load_page(i).get_pixmap(dpi=100)
                 st.image(orig_pix.tobytes("png"), caption=f"Original Page {i+1}", use_container_width=True)
             with col2:
-                comp_page = compressed_doc.load_page(i)
-                comp_pix = comp_page.get_pixmap(dpi=100)
+                comp_pix = compressed_doc.load_page(i).get_pixmap(dpi=100)
                 st.image(comp_pix.tobytes("png"), caption=f"Compressed Page {i+1}", use_container_width=True)
 
         original_doc.close()
