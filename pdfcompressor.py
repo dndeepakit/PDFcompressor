@@ -35,7 +35,6 @@ compression_level = st.radio(
 
 if uploaded_file:
     pdf_bytes = uploaded_file.read()
-    input_pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
 
     # Compression settings
     if "High Quality" in compression_level:
@@ -44,10 +43,11 @@ if uploaded_file:
     elif "Balanced" in compression_level:
         image_quality = 70
         dpi = 120
-    else:  # Smallest Size
+    else:
         image_quality = 50
         dpi = 100
 
+    input_pdf = fitz.open(stream=pdf_bytes, filetype="pdf")
     output_pdf = fitz.open()
 
     with st.spinner("🔄 Compressing PDF... Please wait..."):
@@ -57,12 +57,15 @@ if uploaded_file:
             img_stream = io.BytesIO()
             pix.save(img_stream, "jpeg", quality=image_quality)
             img_stream.seek(0)
-
             rect = fitz.Rect(0, 0, pix.width, pix.height)
             new_page = output_pdf.new_page(width=rect.width, height=rect.height)
             new_page.insert_image(rect, stream=img_stream.getvalue())
 
         optimized_bytes = output_pdf.tobytes()
+
+    # Close the first handles immediately to avoid 'document closed' issue
+    input_pdf.close()
+    output_pdf.close()
 
     original_size = len(pdf_bytes)
     compressed_size = len(optimized_bytes)
@@ -73,23 +76,28 @@ if uploaded_file:
 
     # ===== Preview Section =====
     st.subheader("👁️ Preview (First 5 Pages)")
+    try:
+        original_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        compressed_doc = fitz.open(stream=optimized_bytes, filetype="pdf")
 
-    original_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    compressed_doc = fitz.open(stream=optimized_bytes, filetype="pdf")
+        num_preview_pages = min(5, len(original_doc))
+        st.write(f"Showing first {num_preview_pages} pages:")
 
-    num_preview_pages = min(5, len(original_doc))
-    st.write(f"Showing first {num_preview_pages} pages:")
+        for i in range(num_preview_pages):
+            col1, col2 = st.columns(2)
+            with col1:
+                orig_page = original_doc.load_page(i)
+                orig_pix = orig_page.get_pixmap(dpi=100)
+                st.image(orig_pix.tobytes("png"), caption=f"Original Page {i+1}", use_container_width=True)
+            with col2:
+                comp_page = compressed_doc.load_page(i)
+                comp_pix = comp_page.get_pixmap(dpi=100)
+                st.image(comp_pix.tobytes("png"), caption=f"Compressed Page {i+1}", use_container_width=True)
 
-    for i in range(num_preview_pages):
-        col1, col2 = st.columns(2)
-        with col1:
-            orig_page = original_doc.load_page(i)
-            orig_pix = orig_page.get_pixmap(dpi=100)
-            st.image(orig_pix.tobytes("png"), caption=f"Original Page {i+1}", use_container_width=True)
-        with col2:
-            comp_page = compressed_doc.load_page(i)
-            comp_pix = comp_page.get_pixmap(dpi=100)
-            st.image(comp_pix.tobytes("png"), caption=f"Compressed Page {i+1}", use_container_width=True)
+        original_doc.close()
+        compressed_doc.close()
+    except Exception as e:
+        st.warning(f"Preview unavailable: {e}")
 
     # ===== Download Button =====
     st.download_button(
@@ -98,8 +106,3 @@ if uploaded_file:
         file_name=f"compressed_{uploaded_file.name}",
         mime="application/pdf"
     )
-
-    original_doc.close()
-    compressed_doc.close()
-    input_pdf.close()
-    output_pdf.close()
